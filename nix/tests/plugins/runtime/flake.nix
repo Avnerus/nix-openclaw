@@ -15,7 +15,7 @@
           {
             id = "runtime-disabled";
             path = "${self.outPath}/disabled-plugin";
-            enable = false;
+            enabled = false;
           }
         ];
       };

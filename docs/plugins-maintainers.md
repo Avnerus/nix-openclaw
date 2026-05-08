@@ -13,15 +13,15 @@ Nix capability plugins are the tool/skill/env bundles described below. They do n
 
 OpenClaw plugins are runtime plugin directories with `openclaw.plugin.json` plus built JavaScript loaded by the gateway. They include bundled upstream plugins, official external plugins from OpenClaw's catalog or ClawHub, and third-party plugins. In Nix-managed deployments, these should be immutable plugin roots, not runtime npm installs hidden in host config.
 
-Current nix-openclaw `customPlugins` implements both sides of the contract: package binaries on the gateway PATH, materialize skills, create state dirs, validate env files, render optional tool settings, and wire declared OpenClaw plugin roots into `plugins.load.paths` with a default `plugins.entries.<id>.enabled = true`.
+Current nix-openclaw `customPlugins` implements both sides of the contract: package binaries on the gateway PATH, materialize skills, create state dirs, validate env files, render optional tool settings, and wire declared OpenClaw plugin roots into `plugins.load.paths` with an explicit default `plugins.entries.<id>.enabled` value.
 
 PR #81 (`fix: copy plugin manifests into dist/extensions`) was related but not the missing external-plugin feature. It fixed bundled upstream plugin manifests missing from the packaged gateway `dist/extensions/*/openclaw.plugin.json` tree. Current packaging already copies those manifests and checks them in `openclaw-package-contents`.
 
 Package authors can bridge the existing Nix contract to OpenClaw plugins:
 
-- Extend `openclawPlugin` with an optional plugin declaration, for example `plugins = [ { id = "openclaw-weixin"; path = "${pkg}/lib/openclaw/plugins/openclaw-weixin"; enable = true; } ];`.
-- For each enabled instance, append those paths to generated `plugins.load.paths`.
-- Add default `plugins.entries.<id>.enabled = true`, with user config still able to override it.
+- Extend `openclawPlugin` with an optional plugin declaration, for example `plugins = [ { id = "openclaw-weixin"; path = "${pkg}/lib/openclaw/plugins/openclaw-weixin"; enabled = true; } ];`.
+- For each selected plugin artifact, append those paths to generated `plugins.load.paths`.
+- Add a default `plugins.entries.<id>.enabled` value. `enabled` defaults to true, but plugin authors can set `enabled = false` for roots that should be discoverable while disabled until the host supplies config. User config can still override either default.
 - Keep OpenClaw plugin config in `programs.openclaw.config` / `instances.<name>.config` so upstream schema validation remains the source of truth.
 - Add a fixture shaped like `openclaw-weixin` so `customPlugins = [{ source = ...; }]` proves both package/skill wiring and OpenClaw plugin load wiring.
 
@@ -33,7 +33,7 @@ openclawPlugin = {
   name        = "summarize";                # unique; last-wins on collision
   skills      = [ ./skills/summarize ];      # dirs containing SKILL.md
   packages    = [ pkgs.summarize-cli ];      # binaries placed on the OpenClaw runtime PATH
-  plugins     = [ ];                         # optional OpenClaw plugin roots
+  plugins     = [ ];                         # optional OpenClaw plugin roots: { id, path, enabled ? true }
   needs = {
     stateDirs   = [ ".config/summarize" ]; # created under $HOME
     requiredEnv = [ "SUMMARIZE_API_KEY" ];  # must point to files
@@ -49,7 +49,7 @@ Host responsibilities (what the runtime guarantees):
 - Copy/symlink each `skills` entry into `workspace/skills/<skill-dir-basename>/...`.
 - If host config provides `config.settings`, render it to `config.json` in the first `stateDir`.
 - Export `config.env` (plus required envs) into the gateway wrapper.
-- Add declared OpenClaw plugin roots to `plugins.load.paths`, and set `plugins.entries.<id>.enabled = true` as a default.
+- Add declared OpenClaw plugin roots to `plugins.load.paths`, and set `plugins.entries.<id>.enabled` from the plugin contract as a default.
 - Reject duplicate skill paths; duplicate plugin names: last entry wins.
 
 ### Host-side config shape

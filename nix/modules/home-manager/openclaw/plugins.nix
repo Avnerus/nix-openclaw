@@ -33,10 +33,19 @@ let
         let
           id = entry.id or (throw "openclawPlugin ${name}: plugins entry missing id");
           path = entry.path or (throw "openclawPlugin ${name}: plugins.${id} missing path");
+          enabled =
+            if entry ? enable && !(entry ? enabled) then
+              throw "openclawPlugin ${name}: plugins.${id}.enable is not supported; use enabled"
+            else if entry ? enabled then
+              if builtins.isBool entry.enabled then
+                entry.enabled
+              else
+                throw "openclawPlugin ${name}: plugins.${id}.enabled must be a boolean"
+            else
+              true;
         in
         {
-          inherit id path;
-          enable = entry.enable or true;
+          inherit id path enabled;
           source = plugin.source;
           plugin = name;
         };
@@ -121,15 +130,12 @@ let
   openclawPluginsFor =
     instName: lib.flatten (map (p: p.plugins) (resolvedPluginsByInstance.${instName} or [ ]));
 
-  enabledOpenClawPluginsFor = instName: lib.filter (p: p.enable) (openclawPluginsFor instName);
-
-  openclawPluginLoadPathsFor =
-    instName: map (p: toString p.path) (enabledOpenClawPluginsFor instName);
+  openclawPluginLoadPathsFor = instName: map (p: toString p.path) (openclawPluginsFor instName);
 
   openclawPluginEntriesConfigFor =
     instName:
     let
-      entries = enabledOpenClawPluginsFor instName;
+      entries = openclawPluginsFor instName;
     in
     lib.optionalAttrs (entries != [ ]) {
       plugins = {
@@ -137,7 +143,7 @@ let
           map (p: {
             name = p.id;
             value = {
-              enabled = true;
+              enabled = p.enabled;
             };
           }) entries
         );
@@ -147,7 +153,7 @@ let
   openclawPluginIdAssertions = lib.mapAttrsToList (
     instName: _inst:
     let
-      ids = map (p: p.id) (enabledOpenClawPluginsFor instName);
+      ids = map (p: p.id) (openclawPluginsFor instName);
       counts = lib.foldl' (acc: id: acc // { "${id}" = (acc.${id} or 0) + 1; }) { } ids;
       duplicates = lib.attrNames (lib.filterAttrs (_: v: v > 1) counts);
     in

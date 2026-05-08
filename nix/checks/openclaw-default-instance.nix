@@ -35,7 +35,7 @@ let
       "sha256-lDKtQKHZHqOkOprjLZzBEu8cFJhAdyEzsays9hdVeqE=";
   runtimePluginSource =
     lockedPathFlake "openclaw-test-plugin-runtime" ../tests/plugins/runtime
-      "sha256-JquqpIqcXWwwQPXVHsNQEme8xksXBk1A0lXc/pxsnhE=";
+      "sha256-Ytei4j076EQ5rcpoiMt4BhSGUMtlU5kohQ+CCfKwxEE=";
 
   stubModule =
     { lib, ... }:
@@ -257,14 +257,14 @@ let
       (
         if !(lib.any (path: lib.hasSuffix "/plugin" path) openclawPluginLoadPaths) then
           throw "OpenClaw plugin root was not added to plugins.load.paths."
-        else if lib.any (path: lib.hasSuffix "/disabled-plugin" path) openclawPluginLoadPaths then
-          throw "Disabled OpenClaw plugin root was added to plugins.load.paths."
+        else if !(lib.any (path: lib.hasSuffix "/disabled-plugin" path) openclawPluginLoadPaths) then
+          throw "OpenClaw plugin root with enabled=false was not added to plugins.load.paths."
         else if !(lib.elem "/tmp/user-openclaw-plugin" openclawPluginLoadPaths) then
           throw "User-defined plugins.load.paths entry was not preserved."
         else if (openclawPluginEntry.enabled or false) != true then
           throw "OpenClaw plugin entry default was not enabled."
-        else if openclawPluginDisabledEntry != null then
-          throw "Disabled OpenClaw plugin entry was added to generated config."
+        else if (openclawPluginDisabledEntry.enabled or null) != false then
+          throw "OpenClaw plugin entry with enabled=false did not render a disabled default."
         else
           "ok"
       );
@@ -281,13 +281,39 @@ let
   );
   openclawPluginOverrideEntry =
     ((openclawPluginOverrideConfig.plugins or { }).entries or { }).runtime-test or { };
+  openclawPluginOverrideDisabledEntry =
+    ((openclawPluginOverrideConfig.plugins or { }).entries or { }).runtime-disabled or { };
   openclawPluginOverrideCheck =
     builtins.deepSeq (requireNoAssertionFailures "OpenClaw plugin override" openclawPluginOverrideEval)
       (
-        if (openclawPluginOverrideEntry.enabled or null) == false then
+        if (openclawPluginOverrideEntry.enabled or null) != false then
+          throw "User config could not override OpenClaw plugin enabled default."
+        else if (openclawPluginOverrideDisabledEntry.enabled or null) != false then
+          throw "Plugin enabled=false default did not survive when not overridden."
+        else
+          "ok"
+      );
+
+  openclawPluginEnableOverrideEval = moduleEval {
+    customPlugins = [
+      { source = runtimePluginSource; }
+    ];
+    config.plugins.entries.runtime-disabled.enabled = true;
+  };
+  openclawPluginEnableOverrideConfig = builtins.fromJSON (
+    builtins.unsafeDiscardStringContext
+      openclawPluginEnableOverrideEval.config.home.file.".openclaw/openclaw.json".text
+  );
+  openclawPluginEnableOverrideEntry =
+    ((openclawPluginEnableOverrideConfig.plugins or { }).entries or { }).runtime-disabled or { };
+  openclawPluginEnableOverrideCheck =
+    builtins.deepSeq
+      (requireNoAssertionFailures "OpenClaw plugin enable override" openclawPluginEnableOverrideEval)
+      (
+        if (openclawPluginEnableOverrideEntry.enabled or null) == true then
           "ok"
         else
-          throw "User config could not override OpenClaw plugin enabled default."
+          throw "User config could not override OpenClaw plugin enabled=false default."
       );
 
   checkKey = builtins.deepSeq [
@@ -300,6 +326,7 @@ let
     runtimeProfileCheck
     openclawPluginCheck
     openclawPluginOverrideCheck
+    openclawPluginEnableOverrideCheck
   ] "ok";
 
 in
